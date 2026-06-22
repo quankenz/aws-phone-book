@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AWS Production - PhoneBook</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #7af, #f7f);
+      padding-top: 30px;
+    }
+    .main-card {
+      border-radius: 15px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+  </style>
+</head>
+<body>
+  <div class="container col-md-8 col-lg-6">
+    <div class="card main-card bg-white p-4 mb-4">
+      <h1 class="text-center h3 text-primary mb-3">Project: Phonebook Application</h1>
+      <h5 class="text-center text-muted mb-4">AWS 3-Tier Production Architecture</h5>
+
+      <div class="mb-4 p-3 bg-light rounded">
+        <label class="form-label fw-bold">Search Contact:</label>
+        <div class="input-group">
+          <input type="text" id="search-keyword" class="form-control" placeholder="Enter name to search...">
+          <button class="btn btn-primary" onclick="searchContacts()">Search</button>
+          <button class="btn btn-secondary" onclick="loadAllContacts()">Clear</button>
+        </div>
+      </div>
+
+      <div class="mb-4 p-3 border rounded">
+        <h5 class="text-secondary id="form-action-title">Add New Person</h5>
+        <form id="contact-form">
+          <input type="hidden" id="contact-id">
+          <div class="mb-3">
+            <label class="form-label">Name:</label>
+            <input type="text" id="contact-name" class="form-control" required placeholder="e.g. John Doe">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Phone Number:</label>
+            <input type="text" id="contact-phone" class="form-control" required placeholder="e.g. 0912345678">
+          </div>
+          <button type="submit" id="submit-btn" class="btn btn-success w-100">Add to Phonebook</button>
+          <button type="button" id="cancel-btn" class="btn btn-link w-100 d-none" onclick="resetForm()">Cancel Edit</button>
+        </form>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Name</th>
+              <th>Phone Number</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="phonebook-entries">
+            <tr><td colspan="3" class="text-center text-muted">Loading contacts...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // BEST PRACTICE: Sử dụng Relative Path để CloudFront định tuyến chuẩn Behavior sang ALB
+    // Khi test local, bạn có thể đổi thành: const API_BASE = 'http://<ALB-DNS-OR-LOCAL-IP>:8080';
+    const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:8080' : '';
+
+    document.addEventListener('DOMContentLoaded', loadAllContacts);
+
+    function loadAllContacts() {
+      document.getElementById('search-keyword').value = '';
+      fetch(`${API_BASE}/api/contacts`)
+        .then(res => res.json())
+        .then(renderTable)
+        .catch(err => alert('Error connecting to backend API: ' + err));
+    }
+
+    function searchContacts() {
+      const keyword = document.getElementById('search-keyword').value.trim();
+      if (!keyword) return loadAllContacts();
+      fetch(`${API_BASE}/api/contacts/search?keyword=${encodeURIComponent(keyword)}`)
+        .then(res => res.json())
+        .then(renderTable);
+    }
+
+    function renderTable(data) {
+      const tbody = document.getElementById('phonebook-entries');
+      tbody.innerHTML = '';
+      if(data.length === 0 || (data.length === 1 && data[0].name === "No Result")) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger fw-bold">No Result Found</td></tr>`;
+        return;
+      }
+      data.forEach(item => {
+        tbody.innerHTML += `
+          <tr>
+            <td class="fw-bold">${item.name}</td>
+            <td>${item.number}</td>
+            <td class="text-center">
+              <button class="btn btn-sm btn-warning me-2" onclick="initEdit(${item.id}, '${item.name}', '${item.number}')">Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteContact(${item.id})">Delete</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    document.getElementById('contact-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const id = document.getElementById('contact-id').value;
+      const name = document.getElementById('contact-name').value;
+      const number = document.getElementById('contact-phone').value;
+
+      const payload = { name, number };
+      const url = id ? `${API_BASE}/api/contacts/${id}` : `${API_BASE}/api/contacts`;
+      const method = id ? 'PUT' : 'POST';
+
+      fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        resetForm();
+        loadAllContacts();
+      });
+    });
+
+    function initEdit(id, name, number) {
+      document.getElementById('contact-id').value = id;
+      document.getElementById('contact-name').value = name;
+      document.getElementById('contact-phone').value = number;
+      document.getElementById('form-action-title').innerText = "Update Person Data";
+      document.getElementById('submit-btn').innerText = "Update Record";
+      document.getElementById('submit-btn').className = "btn btn-warning w-100";
+      document.getElementById('cancel-btn').classList.remove('d-none');
+    }
+
+    function resetForm() {
+      document.getElementById('contact-id').value = '';
+      document.getElementById('contact-form').reset();
+      document.getElementById('form-action-title').innerText = "Add New Person";
+      document.getElementById('submit-btn').innerText = "Add to Phonebook";
+      document.getElementById('submit-btn').className = "btn btn-success w-100";
+      document.getElementById('cancel-btn').classList.add('d-none');
+    }
+
+    function deleteContact(id) {
+      if(confirm("Are you sure you want to delete this record?")) {
+        fetch(`${API_BASE}/api/contacts/${id}`, { method: 'DELETE' })
+          .then(() => loadAllContacts());
+      }
+    }
+  </script>
+</body>
+</html>
